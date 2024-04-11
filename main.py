@@ -44,12 +44,34 @@ class GraphApp(QMainWindow):
         function_menu.addAction(clear_derev)
 
     def show_ostovnoe_derevo_page(self):
+        if len(self.connect_items_graph) == 0:
+            QMessageBox.critical(self, "Ошибка", "Добавьте элементы графа")
+            return
         dialog = OstovnoeDerevoPage(self.connect_items_graph, self)
         dialog.exec_()
 
     def show_center(self):
-        dialog = Floid(self.connect_items_graph, self)
-        dialog.exec_()
+        if len(self.connect_items_graph) == 0:
+            QMessageBox.critical(self, "Ошибка", "Добавьте элементы графа")
+            return
+        calculator = ShortestPathMatrixCalculator(self.connect_items_graph)
+        adjacency_matrix = calculator.compute_adjacency_matrix()
+        print("Матрица смежности:")
+        for row in adjacency_matrix:
+            print(row)
+        
+        d0_matrix = calculator.compute_d0_matrix(adjacency_matrix)
+        print("\nМатрица d[0]:")
+        for row in d0_matrix:
+            print(row)
+
+        shortest_path_matrix = calculator.compute_shortest_path_matrix(adjacency_matrix)
+        print("\nМатрица длин кратчайших путей:")
+        for row in shortest_path_matrix:
+            print(row)
+
+        center = calculator.compute_center(shortest_path_matrix)
+        print(f"\nЦентр графа находится в вершине {center}")
 
     def create_scene(self):
         self.scene = QGraphicsScene()
@@ -92,7 +114,7 @@ class GraphApp(QMainWindow):
         if index1 != -1 and index2 != -1 and index1 != index2:
             item1 = self.all_items[index1]
             item2 = self.all_items[index2]
-            weight, ok = QInputDialog.getDouble(self, "", "Растояние между узлами:", 0, 0, 100, 1)
+            weight, ok = QInputDialog.getInt(self, "", "Растояние между узлами:", 0, 0, 100, 1)
             if ok:
                 p1 = item1.rect().center()
                 p2 = item2.rect().center()
@@ -114,23 +136,19 @@ class GraphApp(QMainWindow):
 
     def clear_der(self):
         self.scene.clear()
-        self.all_items = []  
+        self.all_items.clear()  
+        self.connect_items_graph.clear()
         self.combobox1.clear()  
         self.combobox2.clear()
 
     def closeEvent(self, event):
         self.widget.deleteLater()
 
-class Floid(QDialog):
-    def __init__(self, graph, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Определение центра")
+class ShortestPathMatrixCalculator:
+    def __init__(self, graph):
         self.graph = graph
-        self.layout = QVBoxLayout()
-        self.setLayout(self.layout)
-        self.create_tables()
 
-    def floyd_algorithm(self):
+    def compute_adjacency_matrix(self):
         num_vertices = max(max(edge['pointer_1'], edge['pointer_2']) for edge in self.graph) + 1
         adjacency_matrix = [[float('inf')] * num_vertices for _ in range(num_vertices)]
         for edge in self.graph:
@@ -139,33 +157,7 @@ class Floid(QDialog):
             adjacency_matrix[pointer_2][pointer_1] = weight
         for i in range(num_vertices):
             adjacency_matrix[i][i] = 0
-        for k in range(num_vertices):
-            for i in range(num_vertices):
-                for j in range(num_vertices):
-                    if adjacency_matrix[i][k] != float('inf') and adjacency_matrix[k][j] != float('inf') and adjacency_matrix[i][k] + adjacency_matrix[k][j] < adjacency_matrix[i][j]:
-                        adjacency_matrix[i][j] = adjacency_matrix[i][k] + adjacency_matrix[k][j]
         return adjacency_matrix
-
-    def create_tables(self):
-        adjacency_matrix = self.floyd_algorithm()
-        self.create_table("Adjacency Matrix (D)", adjacency_matrix)
-
-        # Compute D0 matrix
-        d0_matrix = self.compute_d0_matrix(adjacency_matrix)
-        self.create_table("D0 Matrix", d0_matrix)
-
-    def create_table(self, title, matrix):
-        table_widget = QTableWidget()
-        table_widget.setRowCount(len(matrix))
-        table_widget.setColumnCount(len(matrix[0]))
-        for i in range(len(matrix)):
-            for j in range(len(matrix[0])):
-                item = QTableWidgetItem(str(matrix[i][j]))
-                table_widget.setItem(i, j, item)
-        table_widget.setHorizontalHeaderLabels([f"{i+1}" for i in range(len(matrix))])
-        table_widget.setVerticalHeaderLabels([f"{i+1}" for i in range(len(matrix))])
-
-        self.layout.addWidget(table_widget)
 
     def compute_d0_matrix(self, adjacency_matrix):
         num_vertices = len(adjacency_matrix)
@@ -179,6 +171,37 @@ class Floid(QDialog):
                     d0_matrix[i][j] = adjacency_matrix[i][j]
 
         return d0_matrix
+
+    def compute_shortest_path_matrix(self, adjacency_matrix):
+        num_vertices = len(adjacency_matrix)
+        shortest_path_matrix = [[0] * num_vertices for _ in range(num_vertices)]
+
+        for i in range(num_vertices):
+            for j in range(num_vertices):
+                shortest_path_matrix[i][j] = adjacency_matrix[i][j]
+
+        for k in range(num_vertices):
+            for i in range(num_vertices):
+                for j in range(num_vertices):
+                    if shortest_path_matrix[i][k] != float('inf') and shortest_path_matrix[k][j] != float('inf') \
+                            and shortest_path_matrix[i][k] + shortest_path_matrix[k][j] < shortest_path_matrix[i][j]:
+                        shortest_path_matrix[i][j] = shortest_path_matrix[i][k] + shortest_path_matrix[k][j]
+
+        return shortest_path_matrix
+
+    def compute_center(self, shortest_path_matrix):
+        num_vertices = len(shortest_path_matrix)
+        min_sum = float('inf')
+        center = -1
+
+        for i in range(num_vertices):
+            sum_distances = sum(shortest_path_matrix[i])
+            if sum_distances < min_sum:
+                min_sum = sum_distances
+                center = i
+
+        return center
+
 
 
 
