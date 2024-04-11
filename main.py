@@ -1,11 +1,12 @@
 import sys
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QGraphicsScene, QGraphicsView, QGraphicsEllipseItem, QGraphicsLineItem, QVBoxLayout, QWidget, QPushButton, QComboBox, QAction, QHBoxLayout, 
-                            QGraphicsTextItem, QInputDialog, QDialog,QMessageBox, QTableWidget, QTableWidgetItem, QLabel)
+                            QGraphicsTextItem, QInputDialog, QDialog,QMessageBox, QTableWidget, QTableWidgetItem, QLabel, QFileDialog)
 from PyQt5.QtCore import Qt, QPointF, QLineF
 import numpy as np
 import networkx as nx
 import matplotlib.pyplot as plt
 from itertools import combinations
+import csv
 
 class GraphApp(QMainWindow):
     def __init__(self):
@@ -27,6 +28,7 @@ class GraphApp(QMainWindow):
         open_file.setShortcut('Ctrl+U')
         save_file = QAction('Сохранить файл', self)
         save_file.setShortcut('Ctrl+S')
+        save_file.triggered.connect(self.save_csv_dialog)
         exit_action = QAction('Закрыть', self)
         exit_action.setShortcut('Ctrl+Q')
         exit_action.triggered.connect(self.close)
@@ -108,6 +110,24 @@ class GraphApp(QMainWindow):
             text_item.setPos(pos.x() - 5, pos.y() - 5)  
             self.scene.addItem(text_item)
 
+    def write_dict_to_csv(self, data, filename):
+        with open(filename, 'w', newline='') as csvfile:
+            fieldnames = ['pointer_1', 'pointer_2', 'weight', 'connect_type']
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            writer.writeheader()
+            for row in data:
+                writer.writerow(row)
+
+    def save_csv_dialog(self, data):
+        if len(self.connect_items_graph) == 0:
+            QMessageBox.critical(self, "Ошибка", "Постройте граф")
+            return
+        options = QFileDialog.Options()
+        filename, _ = QFileDialog.getSaveFileName(None, "Сохранить схему", "", "CSV Files (*.csv)", options=options)
+        if filename:
+            self.write_dict_to_csv(self.connect_items_graph, filename)
+
+
     def connect_items(self):
         index1 = self.combobox1.currentIndex()
         index2 = self.combobox2.currentIndex()
@@ -116,21 +136,24 @@ class GraphApp(QMainWindow):
             item2 = self.all_items[index2]
             weight, ok = QInputDialog.getInt(self, "", "Растояние между узлами:", 0, 0, 100, 1)
             if ok:
-                p1 = item1.rect().center()
-                p2 = item2.rect().center()
-                line = QGraphicsLineItem(QLineF(p1, p2))
-                line.weight = weight
-                text = QGraphicsTextItem(str(weight))
-                text.setPos((p1 + p2) / 2)
-
-                self.connect_items_graph.append({
-                'pointer_1': index1,
-                'pointer_2': index2,
-                'weight': weight
-                })
-                self.scene.addItem(line)
-                self.scene.addItem(text)
-                print(self.connect_items_graph)
+                connection_types = ['Eth', 'СЦИ']
+                connection_type, ok = QInputDialog.getItem(self, "", "Тип соединения:", connection_types, 0, False)
+                if ok:
+                    p1 = item1.rect().center()
+                    p2 = item2.rect().center()
+                    line = QGraphicsLineItem(QLineF(p1, p2))
+                    line.weight = weight
+                    text = QGraphicsTextItem(f"{weight} {connection_type}")
+                    text.setPos((p1 + p2) / 2)
+                    self.connect_items_graph.append({
+                    'pointer_1': index1,
+                    'pointer_2': index2,
+                    'weight': weight,
+                    'connect_type' : connection_type
+                    })
+                    self.scene.addItem(line)
+                    self.scene.addItem(text)
+                    print(self.connect_items_graph)
 
 
 
