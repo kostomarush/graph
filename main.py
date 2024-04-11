@@ -1,6 +1,6 @@
 import sys
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QGraphicsScene, QGraphicsView, QGraphicsEllipseItem, QGraphicsLineItem, QVBoxLayout, QWidget, QPushButton, QComboBox, QAction, QHBoxLayout, 
-                            QGraphicsTextItem, QInputDialog, QDialog,QMessageBox, QTableWidget, QTableWidgetItem, QLabel, QFileDialog)
+                            QGraphicsTextItem, QInputDialog, QDialog,QMessageBox, QTableWidget, QTableWidgetItem, QLabel, QFileDialog, QGridLayout, QStatusBar)
 from PyQt5.QtCore import Qt, QPointF, QLineF
 import numpy as np
 import networkx as nx
@@ -58,22 +58,25 @@ class GraphApp(QMainWindow):
             return
         calculator = ShortestPathMatrixCalculator(self.connect_items_graph)
         adjacency_matrix = calculator.compute_adjacency_matrix()
-        print("Матрица смежности:")
-        for row in adjacency_matrix:
-            print(row)
+        # print("Матрица смежности:")
+        # for row in adjacency_matrix:
+        #     print(row)
         
         d0_matrix = calculator.compute_d0_matrix(adjacency_matrix)
-        print("\nМатрица d[0]:")
-        for row in d0_matrix:
-            print(row)
+        # print("\nМатрица d[0]:")
+        # for row in d0_matrix:
+        #     print(row)
 
         shortest_path_matrix = calculator.compute_shortest_path_matrix(adjacency_matrix)
-        print("\nМатрица длин кратчайших путей:")
-        for row in shortest_path_matrix:
-            print(row)
+        # print("\nМатрица длин кратчайших путей:")
+        # for row in shortest_path_matrix:
+        #     print(row)
 
         center = calculator.compute_center(shortest_path_matrix)
         print(f"\nЦентр графа находится в вершине {center}")
+        
+        window = MatrixWindow(d0_matrix, shortest_path_matrix, center)
+        window.exec_()
 
     def create_scene(self):
         self.scene = QGraphicsScene()
@@ -280,6 +283,37 @@ class OstovnoeDerevoPage(QDialog):
                 self.table_widget.setItem(i, j, item)
         self.layout.addWidget(self.table_widget)
 
+class MatrixWindow(QDialog):
+    def __init__(self, matrix1, matrix2, center):
+        super().__init__()
+        self.setWindowTitle("Матрицы смежности")
+        self.grid_layout = QGridLayout(self)
+
+        self.table1 = QTableWidget()
+        self.table2 = QTableWidget()
+        self.statusbar = QStatusBar()
+
+        self.grid_layout.addWidget(QLabel("D[0]"), 0, 0)
+        self.grid_layout.addWidget(self.table1, 1, 0)
+
+        self.grid_layout.addWidget(QLabel("Матрица кратчайших расстояний"), 0, 1)
+        self.grid_layout.addWidget(self.table2, 1, 1)
+        
+        self.grid_layout.addWidget(self.statusbar, 2, 0, 1, 2)
+
+        self.populate_table(self.table1, matrix1)
+        self.populate_table(self.table2, matrix2)
+        
+        self.statusbar.showMessage(f"\nЦентр графа находится в вершине {center}")
+
+    def populate_table(self, table, matrix):
+        table.setRowCount(len(matrix))
+        table.setColumnCount(len(matrix[0]))
+        for i in range(len(matrix)):
+            for j in range(len(matrix[0])):
+                item = QTableWidgetItem(str(matrix[i][j]))
+                item.setFlags(Qt.ItemIsEnabled)
+                table.setItem(i, j, item)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
