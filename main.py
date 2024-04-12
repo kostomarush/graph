@@ -9,6 +9,8 @@ import matplotlib.pyplot as plt
 from itertools import combinations
 import csv
 import re
+import heapq
+import copy
 
 class GraphApp(QMainWindow):
     def __init__(self):
@@ -22,6 +24,7 @@ class GraphApp(QMainWindow):
         self.connect_items_graph = []
         self.selected_items = []
         self.index = 0
+        self.minm = 0
 
     def create_menu(self):
         menubar = self.menuBar()
@@ -72,23 +75,9 @@ class GraphApp(QMainWindow):
             return
         calculator = ShortestPathMatrixCalculator(self.connect_items_graph)
         adjacency_matrix = calculator.compute_adjacency_matrix()
-        # print("Матрица смежности:")
-        # for row in adjacency_matrix:
-        #     print(row)
-        
         d0_matrix = calculator.compute_d0_matrix(adjacency_matrix)
-        # print("\nМатрица d[0]:")
-        # for row in d0_matrix:
-        #     print(row)
-
         shortest_path_matrix = calculator.compute_shortest_path_matrix(adjacency_matrix)
-        # print("\nМатрица длин кратчайших путей:")
-        # for row in shortest_path_matrix:
-        #     print(row)
-
-        center = calculator.compute_center(shortest_path_matrix)
-        print(f"\nЦентр графа находится в вершине {center}")
-        
+        center = calculator.compute_center(shortest_path_matrix)    
         window = MatrixWindow(d0_matrix, shortest_path_matrix, center)
         window.exec_()
 
@@ -126,7 +115,6 @@ class GraphApp(QMainWindow):
             text_item = QGraphicsTextItem(str(index))
             text_item.setPos(pos.x() - 5, pos.y() - 5)  
             self.scene.addItem(text_item)
-        print(self.all_items)
 
     def load_csv_file(self):
         pointer_set = set()
@@ -165,9 +153,9 @@ class GraphApp(QMainWindow):
                     text.setPos((xy_1 + xy_2) / 2)
                     self.scene.addItem(text)
                     self.connect_items_graph.append({
-                    'pointer_1': index1,
+                    'pointer_1': pointer_1,
                     'xy_1' : xy_1,
-                    'pointer_2': index2,
+                    'pointer_2': pointer_2,
                     'xy_2' : xy_2,
                     'weight': weight,
                     'connect_type' : connect_type
@@ -227,8 +215,6 @@ class GraphApp(QMainWindow):
                     self.scene.addItem(line)
                     self.scene.addItem(text)
 
-
-
     def clear_der(self):
         self.scene.clear()
         self.all_items.clear()  
@@ -257,46 +243,38 @@ class ShortestPathMatrixCalculator:
     def compute_d0_matrix(self, adjacency_matrix):
         num_vertices = len(adjacency_matrix)
         d0_matrix = [[0] * num_vertices for _ in range(num_vertices)]
-
         for i in range(num_vertices):
             for j in range(num_vertices):
                 if i != j and adjacency_matrix[i][j] == float('inf'):
                     d0_matrix[i][j] = float('inf')
                 else:
                     d0_matrix[i][j] = adjacency_matrix[i][j]
-
         return d0_matrix
 
     def compute_shortest_path_matrix(self, adjacency_matrix):
         num_vertices = len(adjacency_matrix)
         shortest_path_matrix = [[0] * num_vertices for _ in range(num_vertices)]
-
         for i in range(num_vertices):
             for j in range(num_vertices):
                 shortest_path_matrix[i][j] = adjacency_matrix[i][j]
-
         for k in range(num_vertices):
             for i in range(num_vertices):
                 for j in range(num_vertices):
                     if shortest_path_matrix[i][k] != float('inf') and shortest_path_matrix[k][j] != float('inf') \
                             and shortest_path_matrix[i][k] + shortest_path_matrix[k][j] < shortest_path_matrix[i][j]:
                         shortest_path_matrix[i][j] = shortest_path_matrix[i][k] + shortest_path_matrix[k][j]
-
         return shortest_path_matrix
 
     def compute_center(self, shortest_path_matrix):
         num_vertices = len(shortest_path_matrix)
         min_sum = float('inf')
         center = -1
-
         for i in range(num_vertices):
             sum_distances = sum(shortest_path_matrix[i])
             if sum_distances < min_sum:
                 min_sum = sum_distances
                 center = i
-
         return center
-
 
 class IntegrPokaz(QDialog):
     def __init__(self, graph, parent=None):
@@ -304,9 +282,114 @@ class IntegrPokaz(QDialog):
         self.setWindowTitle("Интегральный показатель качества ОД")
         self.graph = graph
         self.layout = QVBoxLayout()
+        self.table1 = QTableWidget()
+        self.layout.addWidget(self.table1)
         self.setLayout(self.layout)
+        znach = self.find_all_spanning_trees(self.graph)
 
+        integral_quality = self.calculate_integral_quality(znach)
+        self.table1.setRowCount(len(integral_quality))
+        self.table1.setColumnCount(len(integral_quality[0]))
+        self.table1.resizeColumnsToContents()
+        column_labels = ["kLi", "kni", "khi", "sum"]
+        self.table1.setHorizontalHeaderLabels(column_labels)
+        for i in range(len(integral_quality)):
+            for j in range(len(integral_quality[0])):
+                item = QTableWidgetItem(str(integral_quality[i][j]))
+                item.setFlags(Qt.ItemIsEnabled)
+                self.table1.setItem(i, j, item)
 
+    def find_all_spanning_trees(self, graph):
+        vertices = set()
+        for edge in graph:
+            vertices.add(edge['pointer_1'])
+            vertices.add(edge['pointer_2'])
+        starting_vertex = vertices.pop()
+        visited = {starting_vertex}
+        heap = [(0, None, starting_vertex)]
+        while heap:
+            weight, parent, current_vertex = heapq.heappop(heap)
+            if parent is not None:
+                yield {'pointer_1': parent, 'pointer_2': current_vertex, 'weight': weight}
+            for edge in graph:
+                next_edge = None
+                if edge['pointer_1'] == current_vertex:
+                    next_edge = edge
+                elif edge['pointer_2'] == current_vertex:
+                    next_edge = edge
+                if next_edge is not None:
+                    next_vertex = next_edge['pointer_1'] if next_edge['pointer_1'] != current_vertex else next_edge['pointer_2']
+                    if next_vertex not in visited:
+                        visited.add(next_vertex)
+                        heapq.heappush(heap, (next_edge['weight'], current_vertex, next_vertex))
+        return vertices
+
+    def compute_quality_parameters(self,graph):
+        
+        # Сначала определим список всех уникальных узлов в графе
+        all_nodes = set()
+        for edge in graph:
+            all_nodes.add(edge['pointer_1'])
+            all_nodes.add(edge['pointer_2'])
+
+        # Инициализируем словарь для хранения свойств каждого остовного дерева
+        spanning_trees_properties = []
+
+        # Для каждого узла в графе будем строить остовное дерево
+        for node in all_nodes:
+            # Инициализируем переменные для хранения общего веса и количества узлов
+            total_weight = 0
+            total_nodes = 1  # Начинаем с 1, так как текущий узел уже включен в остовное дерево
+
+            # Создаем список, в который будем добавлять узлы остовного дерева
+            spanning_tree_nodes = [node]
+
+            # Перебираем все рёбра в графе
+            for edge in graph:
+                # Если ребро соединяет текущий узел с другим узлом остовного дерева
+                if edge['pointer_1'] in spanning_tree_nodes and edge['pointer_2'] not in spanning_tree_nodes:
+                    # Добавляем вес ребра к общему весу
+                    total_weight += edge['weight']
+                    # Добавляем новый узел к остовному дереву
+                    spanning_tree_nodes.append(edge['pointer_2'])
+                    # Увеличиваем счетчик узлов
+                    total_nodes += 1
+                elif edge['pointer_2'] in spanning_tree_nodes and edge['pointer_1'] not in spanning_tree_nodes:
+                    # Добавляем вес ребра к общему весу
+                    total_weight += edge['weight']
+                    # Добавляем новый узел к остовному дереву
+                    spanning_tree_nodes.append(edge['pointer_1'])
+                    # Увеличиваем счетчик узлов
+                    total_nodes += 1
+
+            # Добавляем свойства остовного дерева в словарь
+            spanning_trees_properties.append((total_weight, total_nodes, total_weight*total_nodes))
+
+        return spanning_trees_properties
+
+    def calculate_integral_quality(self, min_spanning_trees):
+        quality_parameters = self.compute_quality_parameters(min_spanning_trees)
+        quality_parameters.sort(key=lambda x: (x[0], x[1], x[2]))
+        L_max, L_min = quality_parameters[-1][0], quality_parameters[0][0]
+        n_max, n_min = quality_parameters[-1][1], quality_parameters[0][1]
+        h_max, h_min = quality_parameters[-1][2], quality_parameters[0][2]
+        quality_indices = []
+        for L, n, h in quality_parameters:
+            try:
+                kLi = (L_max - L) / (L_max - L_min)
+            except:
+                kLi = 0
+            try:
+                kni = (n_max - n) / (n_max - n_min)
+            except:
+                kni = 0
+            try:
+                khi = (h_max - h) / (h_max - h_min)
+            except:
+                khi = 0
+            itog_znach = kLi + kni + khi
+            quality_indices.append((round(kLi,2), round(kni,2), round(khi,2), round(itog_znach,2)))
+        return quality_indices
 
 class OstovnoeDerevoPage(QDialog):
     def __init__(self, graph, parent=None):
@@ -331,7 +414,6 @@ class OstovnoeDerevoPage(QDialog):
             for j in range(i + 1, num_vertices):
                 if adjacency_matrix[i][j] != 0:
                     G.add_edge(i, j)
-        
         mst_edges = nx.minimum_spanning_edges(G)
         num_ostovnoe_derevo = len(list(mst_edges))    
         self.layout.addWidget(QLabel(f"Количество остовных деревьев: {num_ostovnoe_derevo}"))
