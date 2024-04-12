@@ -1,17 +1,19 @@
 import sys
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QGraphicsScene, QGraphicsView, QGraphicsEllipseItem, QGraphicsLineItem, QVBoxLayout, QWidget, QPushButton, QComboBox, QAction, QHBoxLayout, 
                             QGraphicsTextItem, QInputDialog, QDialog,QMessageBox, QTableWidget, QTableWidgetItem, QLabel, QFileDialog, QGridLayout, QStatusBar)
-from PyQt5.QtCore import Qt, QPointF, QLineF
+from PyQt5.QtCore import Qt, QPointF, QLineF, QRectF
+from PyQt5.QtGui import QPen, QColor
 import numpy as np
 import networkx as nx
 import matplotlib.pyplot as plt
 from itertools import combinations
 import csv
+import re
 
 class GraphApp(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Interactive Graph Application")
+        self.setWindowTitle("Сеть")
         self.setGeometry(100, 100, 850, 650)
         self.create_menu()
         self.create_scene()
@@ -19,6 +21,7 @@ class GraphApp(QMainWindow):
         self.all_items = []
         self.connect_items_graph = []
         self.selected_items = []
+        self.index = 0
 
     def create_menu(self):
         menubar = self.menuBar()
@@ -26,6 +29,7 @@ class GraphApp(QMainWindow):
         function_menu = menubar.addMenu('Функции')
         open_file = QAction('Открыть файл', self)
         open_file.setShortcut('Ctrl+U')
+        open_file.triggered.connect(self.load_csv_file)
         save_file = QAction('Сохранить файл', self)
         save_file.setShortcut('Ctrl+S')
         save_file.triggered.connect(self.save_csv_dialog)
@@ -37,19 +41,29 @@ class GraphApp(QMainWindow):
         file_menu.addAction(exit_action)
         ost_derev =QAction('Построение остовного дерева', self)
         center_derev = QAction('Определение центра', self)
+        matrix_graf = QAction('Интегральные показатели', self)
         clear_derev = QAction('Очистить поле', self)
         clear_derev.triggered.connect(self.clear_der)
         function_menu.addAction(ost_derev)
         ost_derev.triggered.connect(self.show_ostovnoe_derevo_page)
         function_menu.addAction(center_derev)
         center_derev.triggered.connect(self.show_center)
+        function_menu.addAction(matrix_graf)
         function_menu.addAction(clear_derev)
+        matrix_graf.triggered.connect(self.show_integ_pokaz)
 
     def show_ostovnoe_derevo_page(self):
         if len(self.connect_items_graph) == 0:
             QMessageBox.critical(self, "Ошибка", "Добавьте элементы графа")
             return
         dialog = OstovnoeDerevoPage(self.connect_items_graph, self)
+        dialog.exec_()
+
+    def show_integ_pokaz(self):
+        if len(self.connect_items_graph) == 0:
+            QMessageBox.critical(self, 'Ошибка', 'Добавьте элементы графа')
+            return
+        dialog = IntegrPokaz(self.connect_items_graph, self)
         dialog.exec_()
 
     def show_center(self):
@@ -112,10 +126,64 @@ class GraphApp(QMainWindow):
             text_item = QGraphicsTextItem(str(index))
             text_item.setPos(pos.x() - 5, pos.y() - 5)  
             self.scene.addItem(text_item)
+        print(self.all_items)
+
+    def load_csv_file(self):
+        pointer_set = set()
+        csv_file, _ = QFileDialog.getOpenFileName(self, "Выберите файл с графом", "", "CSV Files (*.csv)")
+        if csv_file:
+            with open(csv_file, newline='') as file:
+                reader = csv.DictReader(file)
+                for row in reader:
+                    pointer_1 = int(row['pointer_1'])
+                    xy_1_str = row['xy_1']
+                    numbers = re.findall(r'[-+]?\d*\.\d+|\d+', xy_1_str)
+                    xy_1 = QPointF(float(numbers[1]), float(numbers[2]))
+                    pointer_2 = int(row['pointer_2'])
+                    xy_2_str = row['xy_2']
+                    numbers2 = re.findall(r'[-+]?\d*\.\d+|\d+', xy_2_str)
+                    xy_2 = QPointF(float(numbers2[1]), float(numbers2[2]))
+                    weight = int(row['weight'])
+                    connect_type = row['connect_type']
+                    item1 = QGraphicsEllipseItem(xy_1.x() - 10, xy_1.y() - 10, 30, 30)
+                    item1.setBrush(QColor(Qt.cyan))
+                    self.scene.addItem(item1)
+                    index1 = self.scene.items().index(item1)
+                    text_item1 = QGraphicsTextItem(str(pointer_1))
+                    text_item1.setPos(xy_1.x() - 5, xy_1.y() - 5)
+                    self.scene.addItem(text_item1)
+                    item2 = QGraphicsEllipseItem(xy_2.x() - 10, xy_2.y() - 10, 30, 30)
+                    item2.setBrush(QColor(Qt.cyan))
+                    self.scene.addItem(item2)
+                    index2 = self.scene.items().index(item2)
+                    text_item2 = QGraphicsTextItem(str(pointer_2))
+                    text_item2.setPos(xy_2.x() - 5, xy_2.y() - 5)
+                    self.scene.addItem(text_item2)
+                    line_pen = QPen(Qt.black)
+                    line = self.scene.addLine(xy_1.x(), xy_1.y(), xy_2.x(), xy_2.y(), line_pen)
+                    text = QGraphicsTextItem(f"{weight} {connect_type}")
+                    text.setPos((xy_1 + xy_2) / 2)
+                    self.scene.addItem(text)
+                    self.connect_items_graph.append({
+                    'pointer_1': index1,
+                    'xy_1' : xy_1,
+                    'pointer_2': index2,
+                    'xy_2' : xy_2,
+                    'weight': weight,
+                    'connect_type' : connect_type
+                    })
+                    pointer_set.add(pointer_1)
+                    pointer_set.add(pointer_2)
+                    if item1 not in self.all_items:
+                        self.all_items.append(item1)
+                for pointer in pointer_set:
+                    self.combobox1.addItem(str(pointer))
+                    self.combobox2.addItem(str(pointer))
+
 
     def write_dict_to_csv(self, data, filename):
         with open(filename, 'w', newline='') as csvfile:
-            fieldnames = ['pointer_1', 'pointer_2', 'weight', 'connect_type']
+            fieldnames = ['pointer_1', 'xy_1', 'pointer_2', 'xy_2', 'weight', 'connect_type']
             writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
             writer.writeheader()
             for row in data:
@@ -150,13 +218,14 @@ class GraphApp(QMainWindow):
                     text.setPos((p1 + p2) / 2)
                     self.connect_items_graph.append({
                     'pointer_1': index1,
+                    'xy_1' : p1,
                     'pointer_2': index2,
+                    'xy_2' : p2,
                     'weight': weight,
                     'connect_type' : connection_type
                     })
                     self.scene.addItem(line)
                     self.scene.addItem(text)
-                    print(self.connect_items_graph)
 
 
 
@@ -229,7 +298,13 @@ class ShortestPathMatrixCalculator:
         return center
 
 
-
+class IntegrPokaz(QDialog):
+    def __init__(self, graph, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Интегральный показатель качества ОД")
+        self.graph = graph
+        self.layout = QVBoxLayout()
+        self.setLayout(self.layout)
 
 
 
