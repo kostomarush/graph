@@ -1,7 +1,7 @@
 import sys
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QGraphicsScene, QGraphicsView, QGraphicsEllipseItem, QGraphicsLineItem, QVBoxLayout, QWidget, QPushButton, QComboBox, QAction, QHBoxLayout, 
                             QGraphicsTextItem, QInputDialog, QDialog,QMessageBox, QTableWidget, QTableWidgetItem, QLabel, QFileDialog, QGridLayout, QStatusBar)
-from PyQt5.QtCore import Qt, QPointF, QLineF, QRectF
+from PyQt5.QtCore import Qt, QPointF, QLineF, QRectF, QThread, pyqtSignal
 from PyQt5.QtGui import QPen, QColor
 import numpy as np
 import networkx as nx
@@ -11,6 +11,7 @@ import csv
 import re
 import heapq
 import copy
+import scipy as sp
 
 class GraphApp(QMainWindow):
     def __init__(self):
@@ -293,79 +294,6 @@ class IntegrPokaz(QDialog):
         self.table1.resizeColumnsToContents()
         column_labels = ["kLi", "kni", "khi", "sum"]
         self.table1.setHorizontalHeaderLabels(column_labels)
-        for i in range(len(integral_quality)):
-            for j in range(len(integral_quality[0])):
-                item = QTableWidgetItem(str(integral_quality[i][j]))
-                item.setFlags(Qt.ItemIsEnabled)
-                self.table1.setItem(i, j, item)
-
-    def find_all_spanning_trees(self, graph):
-        vertices = set()
-        for edge in graph:
-            vertices.add(edge['pointer_1'])
-            vertices.add(edge['pointer_2'])
-        starting_vertex = vertices.pop()
-        visited = {starting_vertex}
-        heap = [(0, None, starting_vertex)]
-        while heap:
-            weight, parent, current_vertex = heapq.heappop(heap)
-            if parent is not None:
-                yield {'pointer_1': parent, 'pointer_2': current_vertex, 'weight': weight}
-            for edge in graph:
-                next_edge = None
-                if edge['pointer_1'] == current_vertex:
-                    next_edge = edge
-                elif edge['pointer_2'] == current_vertex:
-                    next_edge = edge
-                if next_edge is not None:
-                    next_vertex = next_edge['pointer_1'] if next_edge['pointer_1'] != current_vertex else next_edge['pointer_2']
-                    if next_vertex not in visited:
-                        visited.add(next_vertex)
-                        heapq.heappush(heap, (next_edge['weight'], current_vertex, next_vertex))
-        return vertices
-
-    def compute_quality_parameters(self,graph):
-        
-        # Сначала определим список всех уникальных узлов в графе
-        all_nodes = set()
-        for edge in graph:
-            all_nodes.add(edge['pointer_1'])
-            all_nodes.add(edge['pointer_2'])
-
-        # Инициализируем словарь для хранения свойств каждого остовного дерева
-        spanning_trees_properties = []
-
-        # Для каждого узла в графе будем строить остовное дерево
-        for node in all_nodes:
-            # Инициализируем переменные для хранения общего веса и количества узлов
-            total_weight = 0
-            total_nodes = 1  # Начинаем с 1, так как текущий узел уже включен в остовное дерево
-
-            # Создаем список, в который будем добавлять узлы остовного дерева
-            spanning_tree_nodes = [node]
-
-            # Перебираем все рёбра в графе
-            for edge in graph:
-                # Если ребро соединяет текущий узел с другим узлом остовного дерева
-                if edge['pointer_1'] in spanning_tree_nodes and edge['pointer_2'] not in spanning_tree_nodes:
-                    # Добавляем вес ребра к общему весу
-                    total_weight += edge['weight']
-                    # Добавляем новый узел к остовному дереву
-                    spanning_tree_nodes.append(edge['pointer_2'])
-                    # Увеличиваем счетчик узлов
-                    total_nodes += 1
-                elif edge['pointer_2'] in spanning_tree_nodes and edge['pointer_1'] not in spanning_tree_nodes:
-                    # Добавляем вес ребра к общему весу
-                    total_weight += edge['weight']
-                    # Добавляем новый узел к остовному дереву
-                    spanning_tree_nodes.append(edge['pointer_1'])
-                    # Увеличиваем счетчик узлов
-                    total_nodes += 1
-
-            # Добавляем свойства остовного дерева в словарь
-            spanning_trees_properties.append((total_weight, total_nodes, total_weight*total_nodes))
-
-        return spanning_trees_properties
 
     def calculate_integral_quality(self, min_spanning_trees):
         quality_parameters = self.compute_quality_parameters(min_spanning_trees)
@@ -397,8 +325,38 @@ class OstovnoeDerevoPage(QDialog):
         self.setWindowTitle("Остовные деревья")
         self.graph = graph
         self.layout = QVBoxLayout()
+        self.stat = QStatusBar()
         self.setLayout(self.layout)
         self.calculate_and_display_ostovnoe_derevo()
+
+    def _expand(self, G, explored_nodes, explored_edges):
+        frontier_nodes = list()
+        frontier_edges = list()
+        for v in explored_nodes:
+            for u in nx.neighbors(G,v):
+                if not (u in explored_nodes):
+                    frontier_nodes.append(u)
+                    frontier_edges.append([(u,v), (v,u)])
+        return zip([explored_nodes | frozenset([v]) for v in frontier_nodes], [explored_edges | frozenset(e) for e in frontier_edges])
+        
+    def find_all_spanning_trees(self, G, root=0):
+        explored_nodes = frozenset([root])
+        explored_edges = frozenset([])
+        solutions = [(explored_nodes, explored_edges)]
+        for ii in range(G.number_of_nodes()-1):
+            solutions = [self._expand(G, nodes, edges) for (nodes, edges) in solutions]
+            solutions = set([item for sublist in solutions for item in sublist])
+        return [nx.from_edgelist(edges) for (nodes, edges) in solutions]
+
+    def count_spanning_trees(self, graph_edges):
+        G = nx.Graph()
+        for edge in graph_edges:
+            pointer_1 = edge['pointer_1']
+            pointer_2 = edge['pointer_2']
+            weight = edge['weight']
+            G.add_edge(pointer_1, pointer_2, weight=weight)
+        couner_spaning_trees = self.find_all_spanning_trees(G)
+        return couner_spaning_trees
 
     def calculate_and_display_ostovnoe_derevo(self):
         edges = self.graph
@@ -409,21 +367,28 @@ class OstovnoeDerevoPage(QDialog):
             adjacency_matrix[pointer_1][pointer_2] = weight
             adjacency_matrix[pointer_2][pointer_1] = weight
         self.display_adjacency_matrix(adjacency_matrix)
-        G = nx.Graph()
-        for i in range(num_vertices):
-            for j in range(i + 1, num_vertices):
-                if adjacency_matrix[i][j] != 0:
-                    G.add_edge(i, j)
-        mst_edges = nx.minimum_spanning_edges(G)
-        num_ostovnoe_derevo = len(list(mst_edges))    
-        self.layout.addWidget(QLabel(f"Количество остовных деревьев: {num_ostovnoe_derevo}"))
-        mst_edges1 = list(nx.minimum_spanning_edges(G))
-        mst = nx.Graph()
-        mst.add_edges_from(mst_edges1)
-        plt.figure()
-        pos = nx.spring_layout(mst)
-        nx.draw(mst, pos, with_labels=True, node_color='skyblue', node_size=500, font_size=12, font_weight='bold')
-        plt.title("Остовное дерево")
+        adj_matrix_np = np.array(adjacency_matrix)
+        adj_matrix_np_cut = adj_matrix_np[1:, :]
+        transposed_adj_matrix = np.transpose(adj_matrix_np_cut)
+        total_spanning_trees = self.count_spanning_trees(edges)
+        count_spanning_trees = len(total_spanning_trees)
+        self.stat.setStatusTip(f"Количество остовных деревьев: {count_spanning_trees}")
+        num_rows = count_spanning_trees // 2 + count_spanning_trees % 2
+        num_cols = 2 if count_spanning_trees > 1 else 1
+        fig, axes = plt.subplots(num_rows, num_cols, figsize=(10, 5))
+        for idx, mst_edges in enumerate(total_spanning_trees):
+            row = idx // num_cols
+            col = idx % num_cols
+            mst = nx.Graph()
+            mst.add_edges_from(mst_edges.edges)
+            pos = nx.spring_layout(mst)
+            nx.draw(mst, pos, ax=axes[row, col], with_labels=True, node_color='skyblue', node_size=500, font_size=12, font_weight='bold')
+            axes[row, col].set_title(f"Остовное дерево {idx+1}")
+        for idx in range(len(total_spanning_trees), num_rows * num_cols):
+            row = idx // num_cols
+            col = idx % num_cols
+            fig.delaxes(axes[row, col])
+        plt.tight_layout()
         plt.show()
 
 
