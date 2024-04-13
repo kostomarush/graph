@@ -9,8 +9,7 @@ import matplotlib.pyplot as plt
 from itertools import combinations
 import csv
 import re
-import heapq
-import copy
+import threading
 import scipy as sp
 
 class GraphApp(QMainWindow):
@@ -196,7 +195,7 @@ class GraphApp(QMainWindow):
             item2 = self.all_items[index2]
             weight, ok = QInputDialog.getInt(self, "", "Растояние между узлами:", 0, 0, 100, 1)
             if ok:
-                connection_types = ['Eth', 'СЦИ']
+                connection_types = ['Eth', 'СЦИ', 'ПЦИ']
                 connection_type, ok = QInputDialog.getItem(self, "", "Тип соединения:", connection_types, 0, False)
                 if ok:
                     p1 = item1.rect().center()
@@ -286,38 +285,80 @@ class IntegrPokaz(QDialog):
         self.table1 = QTableWidget()
         self.layout.addWidget(self.table1)
         self.setLayout(self.layout)
-        znach = self.find_all_spanning_trees(self.graph)
-
-        integral_quality = self.calculate_integral_quality(znach)
+        znach, G = self.count_spanning_trees(self.graph)
+        integral_quality = self.calculate_integral_quality(znach, G)
         self.table1.setRowCount(len(integral_quality))
         self.table1.setColumnCount(len(integral_quality[0]))
         self.table1.resizeColumnsToContents()
         column_labels = ["kLi", "kni", "khi", "sum"]
         self.table1.setHorizontalHeaderLabels(column_labels)
+        for i in range(len(integral_quality)):
+            for j in range(len(integral_quality[0])):
+                item = QTableWidgetItem(str(integral_quality[i][j]))
+                item.setFlags(Qt.ItemIsEnabled)
+                self.table1.setItem(i, j, item)
+    
+    
+    def dfs_sum(self,graph, start, visited=None):
+        if visited is None:
+            visited = set()
+        visited.add(start)
+        total_sum = start  # Добавляем текущий узел к сумме
+        for next_node in graph.neighbors(start):
+            if next_node not in visited:
+                total_sum += self.dfs_sum(graph, next_node, visited)
+        return total_sum
 
-    def calculate_integral_quality(self, min_spanning_trees):
-        quality_parameters = self.compute_quality_parameters(min_spanning_trees)
-        quality_parameters.sort(key=lambda x: (x[0], x[1], x[2]))
-        L_max, L_min = quality_parameters[-1][0], quality_parameters[0][0]
-        n_max, n_min = quality_parameters[-1][1], quality_parameters[0][1]
-        h_max, h_min = quality_parameters[-1][2], quality_parameters[0][2]
+    def _expand(self, G, explored_nodes, explored_edges):
+        frontier_nodes = list()
+        frontier_edges = list()
+        for v in explored_nodes:
+            for u in nx.neighbors(G,v):
+                if not (u in explored_nodes):
+                    frontier_nodes.append(u)
+                    frontier_edges.append([(u,v), (v,u)])
+        return zip([explored_nodes | frozenset([v]) for v in frontier_nodes], [explored_edges | frozenset(e) for e in frontier_edges])
+        
+    def find_all_spanning_trees(self, G, root=0):
+        explored_nodes = frozenset([root])
+        explored_edges = frozenset([])
+        solutions = [(explored_nodes, explored_edges)]
+        for ii in range(G.number_of_nodes()-1):
+            solutions = [self._expand(G, nodes, edges) for (nodes, edges) in solutions]
+            solutions = set([item for sublist in solutions for item in sublist])
+        return [nx.from_edgelist(edges) for (nodes, edges) in solutions]
+
+    def count_spanning_trees(self, graph_edges):
+        G = nx.Graph()
+        for edge in graph_edges:
+            pointer_1 = edge['pointer_1']
+            pointer_2 = edge['pointer_2']
+            weight = edge['weight']
+            G.add_edge(pointer_1, pointer_2, weight=weight)
+        couner_spaning_trees = self.find_all_spanning_trees(G)
+        return couner_spaning_trees, G
+
+    def calculate_integral_quality(self, spanning_trees, G):
         quality_indices = []
-        for L, n, h in quality_parameters:
-            try:
-                kLi = (L_max - L) / (L_max - L_min)
-            except:
-                kLi = 0
-            try:
-                kni = (n_max - n) / (n_max - n_min)
-            except:
-                kni = 0
-            try:
-                khi = (h_max - h) / (h_max - h_min)
-            except:
-                khi = 0
-            itog_znach = kLi + kni + khi
-            quality_indices.append((round(kLi,2), round(kni,2), round(khi,2), round(itog_znach,2)))
+        itog_L = []
+        total_sum = []
+        center_node = nx.center(G)[0]
+        print(center_node)
+        for tree in spanning_trees:  # Узел, с которого начинается обход в глубину
+            total_sum.append(self.dfs_sum(tree, center_node))
+
+
+            weights = [G[edge[0]][edge[1]]['weight'] for edge in tree.edges()]
+            total_weight = sum(weights)
+            quality_indices.append(total_weight)
+        print(total_sum)
+        max_total_weight = max(quality_indices)
+        min_total_weight = min(quality_indices)
+        for i in quality_indices:
+            itog_L.append((max_total_weight - i) / (max_total_weight - min_total_weight))
+        #print(itog_L)
         return quality_indices
+
 
 class OstovnoeDerevoPage(QDialog):
     def __init__(self, graph, parent=None):
@@ -325,7 +366,8 @@ class OstovnoeDerevoPage(QDialog):
         self.setWindowTitle("Остовные деревья")
         self.graph = graph
         self.layout = QVBoxLayout()
-        self.stat = QStatusBar()
+        self.statusbar = QStatusBar()
+        self.layout.addWidget(self.statusbar)
         self.setLayout(self.layout)
         self.calculate_and_display_ostovnoe_derevo()
 
@@ -367,12 +409,9 @@ class OstovnoeDerevoPage(QDialog):
             adjacency_matrix[pointer_1][pointer_2] = weight
             adjacency_matrix[pointer_2][pointer_1] = weight
         self.display_adjacency_matrix(adjacency_matrix)
-        adj_matrix_np = np.array(adjacency_matrix)
-        adj_matrix_np_cut = adj_matrix_np[1:, :]
-        transposed_adj_matrix = np.transpose(adj_matrix_np_cut)
         total_spanning_trees = self.count_spanning_trees(edges)
         count_spanning_trees = len(total_spanning_trees)
-        self.stat.setStatusTip(f"Количество остовных деревьев: {count_spanning_trees}")
+        self.statusbar.showMessage(f"Количество остовных деревьев: {count_spanning_trees}")
         num_rows = count_spanning_trees // 2 + count_spanning_trees % 2
         num_cols = 2 if count_spanning_trees > 1 else 1
         fig, axes = plt.subplots(num_rows, num_cols, figsize=(10, 5))
@@ -390,8 +429,7 @@ class OstovnoeDerevoPage(QDialog):
             fig.delaxes(axes[row, col])
         plt.tight_layout()
         plt.show()
-
-
+    
     def display_adjacency_matrix(self, adjacency_matrix):
         self.table_widget = QTableWidget()
         self.table_widget.setRowCount(len(adjacency_matrix))
@@ -426,7 +464,7 @@ class MatrixWindow(QDialog):
         self.populate_table(self.table1, matrix1)
         self.populate_table(self.table2, matrix2)
         
-        self.statusbar.showMessage(f"\nЦентр графа находится в вершине {center}")
+        self.statusbar.showMessage(f"Центр графа находится в вершине {center}")
 
     def populate_table(self, table, matrix):
         table.setRowCount(len(matrix))
