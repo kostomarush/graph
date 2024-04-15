@@ -1,6 +1,7 @@
 import sys
+from PyQt5 import QtWidgets, QtGui
 from PyQt5.QtWidgets import (QApplication, QMainWindow, QGraphicsScene, QGraphicsView, QGraphicsEllipseItem, QGraphicsLineItem, QVBoxLayout, QWidget, QPushButton, QComboBox, QAction, QHBoxLayout, 
-                            QGraphicsTextItem, QInputDialog, QDialog,QMessageBox, QTableWidget, QTableWidgetItem, QLabel, QFileDialog, QGridLayout, QStatusBar)
+                            QGraphicsTextItem, QInputDialog, QDialog,QMessageBox, QTableWidget, QTableWidgetItem, QLabel, QFileDialog, QGridLayout, QStatusBar, QSpacerItem, QSizePolicy)
 from PyQt5.QtCore import Qt, QPointF, QLineF, QRectF, QThread, pyqtSignal
 from PyQt5.QtGui import QPen, QColor
 import numpy as np
@@ -9,8 +10,13 @@ import matplotlib.pyplot as plt
 from itertools import combinations
 import csv
 import re
-import threading
+import os
 import scipy as sp
+
+
+ico = os.path.join(sys._MEIPASS, "icon.ico") if getattr(sys, 'frozen', False) else "icon.ico"
+app1 = QtWidgets.QApplication(sys.argv)
+app1.setWindowIcon(QtGui.QIcon(ico))
 
 class GraphApp(QMainWindow):
     def __init__(self):
@@ -98,6 +104,8 @@ class GraphApp(QMainWindow):
         node_layout.addWidget(self.combobox1)
         self.combobox2 = QComboBox()
         node_layout.addWidget(self.combobox2)
+        spacer = QSpacerItem(20, 40, QSizePolicy.Minimum, QSizePolicy.Expanding)
+        node_layout.addItem(spacer)
         self.layout.addLayout(node_layout)
         self.layout.addWidget(self.view)
         self.setCentralWidget(self.widget)
@@ -286,28 +294,37 @@ class IntegrPokaz(QDialog):
         self.layout.addWidget(self.table1)
         self.setLayout(self.layout)
         znach, G = self.count_spanning_trees(self.graph)
-        integral_quality = self.calculate_integral_quality(znach, G)
-        self.table1.setRowCount(len(integral_quality))
-        self.table1.setColumnCount(len(integral_quality[0]))
+        total_L, total_n, total_H = self.calculate_integral_quality(znach, G)
+        self.table1.setRowCount(len(total_L))
+        self.table1.setColumnCount(4)
         self.table1.resizeColumnsToContents()
         column_labels = ["kLi", "kni", "khi", "sum"]
         self.table1.setHorizontalHeaderLabels(column_labels)
-        for i in range(len(integral_quality)):
-            for j in range(len(integral_quality[0])):
-                item = QTableWidgetItem(str(integral_quality[i][j]))
-                item.setFlags(Qt.ItemIsEnabled)
-                self.table1.setItem(i, j, item)
+        for i in range(len(total_L)):
+            self.table1.setItem(i, 0, QTableWidgetItem(str(round(total_L[i],2))))
+            self.table1.setItem(i, 1, QTableWidgetItem(str(round(total_n[i],2))))
+            self.table1.setItem(i, 2, QTableWidgetItem(str(round(total_H[i],2))))
+            self.table1.setItem(i, 3, QTableWidgetItem(str(round((total_H[i] + total_L[i] + total_n[i]), 2))))
     
-    
-    def dfs_sum(self,graph, start, visited=None):
-        if visited is None:
-            visited = set()
-        visited.add(start)
-        total_sum = start  # Добавляем текущий узел к сумме
-        for next_node in graph.neighbors(start):
-            if next_node not in visited:
-                total_sum += self.dfs_sum(graph, next_node, visited)
-        return total_sum
+    def count_nodes(self, G, root):
+        _sum = 0
+        v = set()
+        v.add(root)
+        k = 2  
+        visited = set()  
+        while v:
+            n_v = set()  
+            for _v in v:
+                if _v not in visited: 
+                    visited.add(_v)  
+                    neighbors = G.neighbors(_v)  
+                    for neighbor in neighbors:
+                        if neighbor not in visited:
+                            n_v.add(neighbor)
+                            _sum += k
+            k += 1
+            v = n_v
+        return _sum
 
     def _expand(self, G, explored_nodes, explored_edges):
         frontier_nodes = list()
@@ -338,26 +355,59 @@ class IntegrPokaz(QDialog):
         couner_spaning_trees = self.find_all_spanning_trees(G)
         return couner_spaning_trees, G
 
+    def spanning_treeses(self, graph_edges):
+        G = nx.Graph()
+        for edge in graph_edges:
+            pointer_1 = edge['pointer_1']
+            pointer_2 = edge['pointer_2']
+            if edge['connect_type'] == 'Eth':
+                weight = 2
+            elif edge['connect_type'] == 'СЦИ':
+                weight = 1
+            elif edge['connect_type'] == 'ПЦИ':
+                weight = 1.5
+            G.add_edge(pointer_1, pointer_2, weight=weight)
+        return G
+
     def calculate_integral_quality(self, spanning_trees, G):
         quality_indices = []
+        quality = []
         itog_L = []
+        itog_n = []
+        itog_h = []
         total_sum = []
         center_node = nx.center(G)[0]
-        print(center_node)
+        G1 = self.spanning_treeses(self.graph)
         for tree in spanning_trees:  # Узел, с которого начинается обход в глубину
-            total_sum.append(self.dfs_sum(tree, center_node))
-
-
+            total_sum.append(self.count_nodes(tree, center_node))
             weights = [G[edge[0]][edge[1]]['weight'] for edge in tree.edges()]
+            n_weights = [G1[edge[0]][edge[1]]['weight'] for edge in tree.edges()]
             total_weight = sum(weights)
+            sum_total = sum(n_weights)
             quality_indices.append(total_weight)
-        print(total_sum)
+            quality.append(sum_total)
         max_total_weight = max(quality_indices)
         min_total_weight = min(quality_indices)
+        max_total_sum = max(total_sum)
+        min_total_sum = min(total_sum)
+        max_total_h = max(quality)
+        min_total_h = min(quality)
         for i in quality_indices:
-            itog_L.append((max_total_weight - i) / (max_total_weight - min_total_weight))
-        #print(itog_L)
-        return quality_indices
+            try:
+                itog_L.append((max_total_weight - i) / (max_total_weight - min_total_weight))
+            except:
+                itog_L.append(0)
+        for i in total_sum:
+            try:
+                itog_n.append((max_total_sum - i) / (max_total_sum - min_total_sum))
+            except:
+                itog_n.append(0)
+        for i in quality:
+            try:
+                itog_h.append((max_total_h - i) / (max_total_h - min_total_h))
+            except:
+                itog_h.append(0)
+        return itog_L, itog_n, itog_h
 
 
 class OstovnoeDerevoPage(QDialog):

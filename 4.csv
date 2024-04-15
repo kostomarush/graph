@@ -1,0 +1,6 @@
+pointer_1,xy_1,pointer_2,xy_2,weight,connect_type
+0,"PyQt5.QtCore.QPointF(542.0, 125.0)",1,"PyQt5.QtCore.QPointF(484.0, 335.0)",1,—÷»
+0,"PyQt5.QtCore.QPointF(542.0, 125.0)",2,"PyQt5.QtCore.QPointF(158.0, 343.0)",4,Eth
+1,"PyQt5.QtCore.QPointF(484.0, 335.0)",2,"PyQt5.QtCore.QPointF(158.0, 343.0)",4,—÷»
+1,"PyQt5.QtCore.QPointF(484.0, 335.0)",3,"PyQt5.QtCore.QPointF(566.0, 487.0)",2,—÷»
+2,"PyQt5.QtCore.QPointF(158.0, 343.0)",3,"PyQt5.QtCore.QPointF(566.0, 487.0)",5,Eth
